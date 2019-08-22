@@ -43,8 +43,8 @@
   name = "github.com/libopenstorage/openstorage"
   branch = "release-4.0"
 
-[[override]]
-  branch = "external_storage_dep"
+[[constraint]]
+  branch = "master"
   name = "github.com/portworx/sched-ops"
 
 [[constraint]]
