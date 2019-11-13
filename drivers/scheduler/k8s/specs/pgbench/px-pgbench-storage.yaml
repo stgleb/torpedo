@@ -4,8 +4,8 @@ metadata:
   name: postgres-pgbench-sc
 provisioner: kubernetes.io/portworx-volume
 parameters:
-  repl: "1"
-  priority_io: "low"
+  repl: "2"
+  priority_io: "high"
 allowVolumeExpansion: true
 ---
 kind: PersistentVolumeClaim
@@ -17,13 +17,15 @@ metadata:
     name: pgbench-data
   annotations:
    torpedo.io/autopilot-enabled: "true"
+   #torpedo.io/autopilot-pvc-resize-enabled: "true"
+   torpedo.io/autopilot-storage-pool-resize-enabled: "true"
 spec:
   storageClassName: postgres-pgbench-sc
   accessModes:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 5Gi
+      storage: 100Gi
 ---
 kind: PersistentVolumeClaim
 apiVersion: v1

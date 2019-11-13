@@ -41,14 +41,12 @@ if [ -n "$FOCUS_TESTS" ]; then
     FOCUS_ARG="--focus={$focusRegex}"
 fi
 
-UPGRADE_ENDPOINT_URL_ARG=""
-if [ -n "${UPGRADE_ENDPOINT_URL}" ]; then
-    UPGRADE_ENDPOINT_URL_ARG="--storage-upgrade-endpoint-url=$UPGRADE_ENDPOINT_URL"
+if [ -z "${UPGRADE_ENDPOINT_URL}" ]; then
+    UPGRADE_ENDPOINT_URL=""
 fi
 
-UPGRADE_ENDPOINT_VERSION_ARG=""
-if [ -n "${UPGRADE_ENDPOINT_VERSION}" ]; then
-    UPGRADE_ENDPOINT_VERSION_ARG="--storage-upgrade-endpoint-version=$UPGRADE_ENDPOINT_VERSION"
+if [ -z "${UPGRADE_ENDPOINT_VERSION}" ]; then
+    UPGRADE_ENDPOINT_VERSION=""
 fi
 
 if [ -n "${PROVISIONER}" ]; then
@@ -58,6 +56,10 @@ fi
 CONFIGMAP=""
 if [ -n "${CONFIG_MAP}" ]; then
     CONFIGMAP="${CONFIG_MAP}"
+fi
+
+if [ -z "${SCALE_STORAGE_FACTOR}" ]; then
+    SCALE_STORAGE_FACTOR=""
 fi
 
 if [ -z "${TORPEDO_IMG}" ]; then
@@ -270,8 +272,9 @@ spec:
             "--storagenode-recovery-timeout", "$STORAGENODE_RECOVERY_TIMEOUT",
             "--provisioner", "$PROVISIONER",
             "--config-map", "$CONFIGMAP",
-            "$UPGRADE_ENDPOINT_URL_ARG",
-            "$UPGRADE_ENDPOINT_VERSION_ARG" ]
+            "--storage-upgrade-endpoint-url=$UPGRADE_ENDPOINT_URL",
+            "--storage-upgrade-endpoint-version=$UPGRADE_ENDPOINT_VERSION",
+            "--scale-storage-factor=$SCALE_STORAGE_FACTOR"]
     tty: true
     volumeMounts: [${VOLUME_MOUNTS}]
     env:

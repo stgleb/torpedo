@@ -12,11 +12,12 @@ import (
 
 // Volume is a generic struct encapsulating volumes in the cluster
 type Volume struct {
-	ID        string
-	Name      string
-	Namespace string
-	Size      uint64
-	Shared    bool
+	ID          string
+	Name        string
+	Namespace   string
+	Annotations map[string]string
+	Size        uint64
+	Shared      bool
 }
 
 // Snapshot is a generic struct encapsulating snapshots in the cluster
@@ -126,8 +127,8 @@ type Driver interface {
 	// GetNodeStatus returns the status of a given node
 	GetNodeStatus(n node.Node) (*api.Status, error)
 
-	// GetReplicaSetNodes returns the replica sets for a given volume
-	GetReplicaSetNodes(vol *Volume) ([]string, error)
+	// GetReplicaSetNodes returns the replica set nodes for a given volume
+	GetReplicaSetNodes(vol *Volume) ([]node.Node, error)
 
 	// ValidateVolumeSnapshotRestore return nil if snapshot is restored successuflly to
 	// given volumes
@@ -135,6 +136,9 @@ type Driver interface {
 
 	// Collect live diags on a node
 	CollectDiags(n node.Node) error
+
+	// ValidateStorage validates all the storage
+	ValidateStoragePoolSize(n node.Node, poolSize uint64) error
 }
 
 // StorageProvisionerType provisioner to be used for torpedo volumes

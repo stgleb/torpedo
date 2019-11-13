@@ -76,6 +76,8 @@ const (
 	validateVolumeAttachedTimeout    = 30 * time.Second
 	validateVolumeAttachedInterval   = 5 * time.Second
 	validateNodeStopTimeout          = 5 * time.Minute
+	validateStoragePoolSizeTimeout   = 30 * time.Minute
+	validateStoragePoolSizeInterval  = 30 * time.Second
 	getNodeTimeout                   = 3 * time.Minute
 	getNodeRetryInterval             = 5 * time.Second
 	stopDriverTimeout                = 5 * time.Minute
@@ -977,6 +979,36 @@ func (d *portworx) WaitDriverDownOnNode(n node.Node) error {
 	return nil
 }
 
+func (d *portworx) ValidateStoragePoolSize(n node.Node, expectedPoolSize uint64) error {
+	t := func() (interface{}, bool, error) {
+		pxNode, err := d.clusterManager.Inspect(n.VolDriverNodeID)
+		if err != nil {
+			return nil, true, &ErrFailedToWaitForPx{
+				Node:  n,
+				Cause: err.Error(),
+			}
+		}
+
+		storagePoolSize := pxNode.Pools[0].TotalSize
+		if storagePoolSize != expectedPoolSize {
+			return nil, true, &ErrFailedToWaitForPx{
+				Node: n,
+				Cause: fmt.Sprintf("storage pool size is not as expected. Expected: %d Actual: %d",
+					expectedPoolSize, storagePoolSize),
+			}
+		}
+
+		logrus.Infof("storage pool size is as expected. Expected: %d Actual: %d", expectedPoolSize, storagePoolSize)
+		return nil, false, nil
+	}
+
+	if _, err := task.DoRetryWithTimeout(t, validateStoragePoolSizeTimeout, validateStoragePoolSizeInterval); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (d *portworx) pickAlternateClusterManager(n node.Node) (cluster.Cluster, error) {
 	// Check if px is down on all node addresses. We don't want to keep track
 	// which was the actual interface px was listening on before it went down
@@ -1538,8 +1570,8 @@ func (d *portworx) getStorageStatus(n node.Node) string {
 	return status
 }
 
-func (d *portworx) GetReplicaSetNodes(torpedovol *torpedovolume.Volume) ([]string, error) {
-	var pxNodes []string
+func (d *portworx) GetReplicaSetNodes(torpedovol *torpedovolume.Volume) ([]node.Node, error) {
+	var nodes []node.Node
 	volName := d.schedOps.GetVolumeName(torpedovol)
 	vols, err := d.getVolDriver("").Inspect([]string{volName})
 	if err != nil {
@@ -1557,22 +1589,16 @@ func (d *portworx) GetReplicaSetNodes(torpedovol *torpedovolume.Volume) ([]strin
 	}
 
 	for _, rs := range vols[0].ReplicaSets {
-		for _, n := range rs.Nodes {
-			pxNode, err := d.clusterManager.Inspect(n)
-			if err != nil {
-				return nil, &ErrFailedToInspectVolume{
-					ID:    torpedovol.Name,
-					Cause: fmt.Sprintf("Failed to inspect replica set node: %s err: %v", n, err),
+		for _, rsNode := range rs.Nodes {
+			allNodes := node.GetNodes()
+			for _, n := range allNodes {
+				if n.VolDriverNodeID == rsNode {
+					nodes = append(nodes, n)
 				}
 			}
-			nodeName := pxNode.SchedulerNodeName
-			if nodeName == "" {
-				nodeName = pxNode.Hostname
-			}
-			pxNodes = append(pxNodes, nodeName)
 		}
 	}
-	return pxNodes, nil
+	return nodes, nil
 }
 
 func (d *portworx) updateNodeID(n node.Node, cManager cluster.Cluster) (node.Node, error) {

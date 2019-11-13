@@ -5,12 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/onsi/ginkgo"
 	"github.com/onsi/gomega"
+	"github.com/portworx/sched-ops/k8s"
 	"github.com/portworx/sched-ops/task"
 	"github.com/portworx/torpedo/drivers/node"
 	"github.com/sirupsen/logrus"
@@ -52,28 +54,30 @@ const (
 	provisionerFlag                      = "provisioner"
 	storageNodesPerAZFlag                = "max-storage-nodes-per-az"
 	configMapFlag                        = "config-map"
+	scaleStorageFactorFlag               = "scale-storage-factor"
 )
 
 const (
-	defaultScheduler                      = "k8s"
-	defaultNodeDriver                     = "ssh"
-	defaultStorageDriver                  = "pxd"
-	defaultLogLocation                    = "/mnt/torpedo_support_dir"
-	defaultLogLevel                       = "debug"
-	defaultAppScaleFactor                 = 1
-	defaultMinRunTimeMins                 = 0
-	defaultChaosLevel                     = 5
-	defaultStorageUpgradeEndpointURL      = "https://install.portworx.com/upgrade"
-	defaultStorageUpgradeEndpointVersion  = "2.1.1"
-	defaultStorageProvisioner             = "portworx"
-	defaultStorageNodesPerAZ              = 2
+	defaultScheduler                     = "k8s"
+	defaultNodeDriver                    = "ssh"
+	defaultStorageDriver                 = "pxd"
+	defaultLogLocation                   = "/mnt/torpedo_support_dir"
+	defaultLogLevel                      = "debug"
+	defaultAppScaleFactor                = 1
+	defaultMinRunTimeMins                = 0
+	defaultChaosLevel                    = 5
+	defaultStorageUpgradeEndpointURL     = "https://install.portworx.com/upgrade"
+	defaultStorageUpgradeEndpointVersion = "2.1.1"
+	defaultStorageProvisioner            = "portworx"
+	defaultStorageNodesPerAZ             = 2
+	storagePoolResizeAnnotationKey       = "torpedo.io/autopilot-storage-pool-resize-enabled"
+)
+
+const (
+	waitResourceCleanup                   = 2 * time.Minute
+	defaultTimeout                        = 5 * time.Minute
+	defaultRetryInterval                  = 10 * time.Second
 	defaultAutoStorageNodeRecoveryTimeout = 30 * time.Minute
-)
-
-const (
-	waitResourceCleanup  = 2 * time.Minute
-	defaultTimeout       = 5 * time.Minute
-	defaultRetryInterval = 10 * time.Second
 )
 
 var (
@@ -329,6 +333,50 @@ func ValidateAndDestroy(contexts []*scheduler.Context, opts map[string]bool) {
 	})
 }
 
+func AddLabelsOnNode(n node.Node, labels map[string]string) error {
+	for labelKey, labelValue := range labels {
+		if err := k8s.Instance().AddLabelOnNode(n.Name, labelKey, labelValue); err != nil {
+			logrus.Errorf("Failed to set label Key: %v Value: %v Err: %v", labelKey, labelValue, err)
+			return err
+		}
+	}
+	logrus.Infof("Added labels on %s node: %+v", n.Name, labels)
+	return nil
+}
+
+// ValidateStoragePoolSize validates application and then destroys them
+func ValidateStoragePoolSize(contexts []*scheduler.Context, poolSize uint64) {
+	for _, ctx := range contexts {
+		Step(fmt.Sprintf("get volumes for %s app", ctx.App.Key), func() {
+			appVolumes, err := Inst().S.GetVolumes(ctx)
+			expect(err).NotTo(haveOccurred())
+			expect(appVolumes).NotTo(beEmpty())
+
+			for _, volume := range appVolumes {
+
+				storagePoolResizeAnnotationSupported := false
+				if storagePoolResizeAnnotation, ok := volume.Annotations[storagePoolResizeAnnotationKey]; ok {
+					storagePoolResizeAnnotationSupported, _ = strconv.ParseBool(storagePoolResizeAnnotation)
+				}
+				if storagePoolResizeAnnotationSupported {
+					Step(fmt.Sprintf("get replica set nodes for %s volume", volume.Name), func() {
+						replicaSetNodes, err := Inst().V.GetReplicaSetNodes(volume)
+						expect(err).NotTo(haveOccurred())
+						expect(replicaSetNodes).NotTo(beEmpty())
+
+						Step("validate storage pool size", func() {
+							for _, replicaSetNode := range replicaSetNodes {
+								err := Inst().V.ValidateStoragePoolSize(replicaSetNode, poolSize)
+								expect(err).NotTo(haveOccurred())
+							}
+						})
+					})
+				}
+			}
+		})
+	}
+}
+
 // PerformSystemCheck check if core files are present on each node
 func PerformSystemCheck() {
 	context(fmt.Sprintf("checking for core files..."), func() {
@@ -380,12 +428,13 @@ type Torpedo struct {
 	DriverStartTimeout                  time.Duration
 	AutoStorageNodeRecoveryTimeout      time.Duration
 	ConfigMap                           string
+	ScaleStorageFactor                  string
 }
 
 // ParseFlags parses command line flags
 func ParseFlags() {
 	var err error
-	var s, n, v, specDir, logLoc, logLevel, appListCSV, provisionerName, configMapName string
+	var s, n, v, specDir, logLoc, logLevel, appListCSV, provisionerName, configMapName, scaleStorageFactor string
 	var schedulerDriver scheduler.Driver
 	var volumeDriver volume.Driver
 	var nodeDriver node.Driver
@@ -420,6 +469,7 @@ func ParseFlags() {
 	flag.DurationVar(&driverStartTimeout, "driver-start-timeout", defaultTimeout, "Maximum wait volume driver startup")
 	flag.DurationVar(&autoStorageNodeRecoveryTimeout, "storagenode-recovery-timeout", defaultAutoStorageNodeRecoveryTimeout, "Maximum wait time in minutes for storageless nodes to transition to storagenodes in case of ASG")
 	flag.StringVar(&configMapName, configMapFlag, "", "Name of the config map to be used.")
+	flag.StringVar(&scaleStorageFactor, scaleStorageFactorFlag, "", "Factor by which to scale storage applications")
 
 	flag.Parse()
 
@@ -427,7 +477,6 @@ func ParseFlags() {
 	if err != nil {
 		logrus.Fatalf("failed to parse app list: %v. err: %v", appListCSV, err)
 	}
-
 	if schedulerDriver, err = scheduler.Get(s); err != nil {
 		logrus.Fatalf("Cannot find scheduler driver for %v. Err: %v\n", s, err)
 	} else if volumeDriver, err = volume.Get(v); err != nil {
@@ -458,6 +507,7 @@ func ParseFlags() {
 				DriverStartTimeout:                  driverStartTimeout,
 				AutoStorageNodeRecoveryTimeout:      autoStorageNodeRecoveryTimeout,
 				ConfigMap:                           configMapName,
+				ScaleStorageFactor:                  scaleStorageFactor,
 			}
 		})
 	}

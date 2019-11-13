@@ -74,6 +74,8 @@ type AutopilotRuleParameters struct {
 	RuleConditionExpressions []AutopilotRuleConditionExpressions
 	// ExpectedPVCSize is the expected PVC size after resize
 	ExpectedPVCSize int64
+	// ExpectedPoolSize is the expected Storage pool size after resize
+	ExpectedPoolSize uint64
 }
 
 // AutopilotParameters are parameters that using for Autopilot
@@ -103,6 +105,8 @@ type ScheduleOptions struct {
 	ConfigMap string
 	// AutopilotParameters identifies options for autopilot (Optional)
 	AutopilotParameters *AutopilotParameters
+	// ScaleStorageFactor identifies what app storage size should be used to
+	ScaleStorageFactor string
 }
 
 // Driver must be implemented to provide test support to various schedulers.
