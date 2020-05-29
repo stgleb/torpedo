@@ -26,3 +26,4 @@ parameters:
   skuName: Standard_LRS
   location: eastus
   storageAccount: pwxautomation
+  resourceGroup: portworx
