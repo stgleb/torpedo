@@ -54,5 +54,5 @@ func (d *azure) Init(sched string, nodeDriver string, token string, storageProvi
 }
 
 func init() {
-	torpedovolume.Register(DriverName, provisioners, &azure{})
+	torpedovolume.Register(DriverName, &azure{})
 }

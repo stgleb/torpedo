@@ -54,5 +54,5 @@ func (d *aws) Init(sched string, nodeDriver string, token string, storageProvisi
 }
 
 func init() {
-	torpedovolume.Register(DriverName, provisioners, &aws{})
+	torpedovolume.Register(DriverName, &aws{})
 }

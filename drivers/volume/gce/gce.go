@@ -45,5 +45,5 @@ func (d *gce) Init(sched string, nodeDriver string, token string, storageProvisi
 }
 
 func init() {
-	torpedovolume.Register(DriverName, provisioners, &gce{})
+	torpedovolume.Register(DriverName, &gce{})
 }

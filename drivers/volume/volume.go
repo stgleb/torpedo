@@ -170,7 +170,6 @@ const (
 
 var (
 	volDrivers   = make(map[string]Driver)
-	provisioners = make([]string, 0)
 	// StorageDriver to be used to store name of the storage driver
 	StorageDriver string
 	// StorageProvisioner to be used to store name of the storage provisioner
@@ -178,12 +177,7 @@ var (
 )
 
 // Register registers the given volume driver
-func Register(name string, driverProvisioners map[StorageProvisionerType]StorageProvisionerType, d Driver) error {
-	// Add provisioners supported by driver to slice
-	for provisioner := range driverProvisioners {
-		provisioners = append(provisioners, string(provisioner))
-	}
-
+func Register(name string, d Driver) error {
 	if _, ok := volDrivers[name]; !ok {
 		volDrivers[name] = d
 	} else {
@@ -223,15 +217,6 @@ func GetVolumeDrivers() []string {
 		voldrivers = append(voldrivers, v)
 	}
 	return voldrivers
-}
-
-// GetVolumeProvisioners returns list of supported volume provisioners
-func GetVolumeProvisioners() []string {
-	var volumeProvisioners []string
-	for _, v := range provisioners {
-		volumeProvisioners = append(volumeProvisioners, v)
-	}
-	return volumeProvisioners
 }
 
 func (v *Volume) String() string {
